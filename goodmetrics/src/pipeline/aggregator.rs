@@ -167,15 +167,17 @@ where
     ) where
         TAggregationBatcher: AggregationBatcher,
     {
-        // Try to align to some even column since the epoch. It helps make metrics better-aligned when systems have well-aligned clocks.
-        // It's usually more convenient in grafana this way.
-        let extra_start_offset = self
+        // Align the first batch to the next epoch-aligned boundary so reports from
+        // various machines land on consistent time boundaries for downstream stores.
+        let cadence_ms = cadence.as_millis().max(1);
+        let elapsed_in_period = self
             .now_wall_clock()
             .duration_since(std::time::UNIX_EPOCH)
             .expect("could not get system time")
             .as_millis()
-            % cadence.as_millis();
-        tokio::time::sleep(Duration::from_millis(extra_start_offset as u64)).await;
+            % cadence_ms;
+        let align_delay = if elapsed_in_period == 0 { 0 } else { cadence_ms - elapsed_in_period };
+        tokio::time::sleep(Duration::from_millis(align_delay as u64)).await;
         let mut last_emit = self.now_timer();
 
         loop {
