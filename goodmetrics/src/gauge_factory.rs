@@ -8,7 +8,7 @@ use tokio::{sync::mpsc, time::MissedTickBehavior};
 
 use crate::{
     gauge::{Gauge, HistogramHandle, StatisticSetHandle, SumHandle},
-    pipeline::{AggregatedMetricsMap, AggregationBatcher},
+    pipeline::{AggregatedMetricsMap, AggregationBatcher, TimeSource},
     GaugeDimensions, GaugeGroup, Name,
 };
 
@@ -206,17 +206,9 @@ impl GaugeFactory {
         TAggregationBatcher: AggregationBatcher,
         TAggregationBatcher::TBatch: Send,
     {
-        let period_ms = period.as_millis().max(1);
-        let elapsed_in_period = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("could not get system time")
-            .as_millis()
-            % period_ms;
-        let initial_delay = Duration::from_millis(
-            if elapsed_in_period == 0 { 0 } else { period_ms - elapsed_in_period } as u64,
-        );
         // Align the first report to the next epoch-aligned boundary so reports from
         // various machines land on consistent time boundaries for downstream stores.
+        let initial_delay = TimeSource::SystemTime.duration_to_next_interval(period);
         tokio::time::sleep(initial_delay).await;
 
         let mut interval = tokio::time::interval(period);
